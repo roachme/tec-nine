@@ -1,6 +1,6 @@
 #!/bin/env bash
 
-PGNAME="tec-pgm"
+PGNAME="tec-nine"
 VERSION="v0.0.1"
 COMMAND=
 TASKDIR=
@@ -28,8 +28,8 @@ function _check_args()
 function find_config()
 {
     declare -a cfgs=(
-        "$HOME/.tec/pgn/pgm.json"
-        "$HOME/.config/tec/pgn/pgm.json"
+        "$HOME/.tec/pgn/nine.json"
+        "$HOME/.config/tec/pgn/nine.json"
     )
 
     for cfg in "${cfgs[@]}"; do
@@ -52,7 +52,7 @@ function dlog()
     fi
 }
 
-function _pgm_init()
+function _nine_init()
 {
     find_config
 }
@@ -61,7 +61,7 @@ function _pgm_init()
 function usage()
 {
     cat << EOF
-Usage: tec pgm COMMAND [OPTION]... [ARGS]...
+Usage: tec nine COMMAND [OPTION]... [ARGS]...
     Tec plugin manager
 
     COMMAND list:
@@ -72,14 +72,14 @@ Usage: tec pgm COMMAND [OPTION]... [ARGS]...
       sync      update plugin (pull changes from remote repo)
       ver       show version and exit
 
-    Use 'tec pgm help COMMAND' to get help on command
+    Use 'tec nine help COMMAND' to get help on command
 EOF
 }
 
 function _help_add()
 {
     cat << EOF
-Usage: tec pgm add [OPTION]... [URL]...
+Usage: tec nine add [OPTION]... [URL]...
     Install a plugin via URL or from config file
 
     Arguments:
@@ -91,7 +91,7 @@ EOF
     return 0
 }
 
-function pgm_help()
+function nine_help()
 {
     local command="$1"
     declare -a commands=("add" "del" "help" "list" "ver")
@@ -108,7 +108,7 @@ function pgm_help()
 # TODO: add option -f : delete and reinstall plugin again
 # TODO: compile/install each plugin if needed
 # TODO: Add support to pass repo URL as an option
-function pgm_add()
+function nine_add()
 {
     declare -A repocfg
 
@@ -136,7 +136,7 @@ function pgm_add()
     done <<< "$REPOS"
 }
 
-function pgm_del()
+function nine_del()
 {
     local pgname="$1"
 
@@ -148,10 +148,10 @@ function pgm_del()
     fi
 
     if [ -z "$pgname" ]; then
-        elog "no plugin is provided. Try 'pgm help' for more info"
+        elog "no plugin is provided. Try 'nine help' for more info"
         exit 1
     elif [ ! -d "$PGNDIR/$pgname" ]; then
-        elog "$pgname: no such plugin. Try 'pgm help' for more info"
+        elog "$pgname: no such plugin. Try 'nine help' for more info"
         exit 1
     else
         echo "delete plugin in $PGNDIR/$pgname"
@@ -160,7 +160,7 @@ function pgm_del()
 }
 
 # TODO: add stutus: repo is cloned or not
-function pgm_list()
+function nine_list()
 {
     find "$PGNDIR/" -maxdepth 1 -type d ! -path "$PGNDIR/" | while read -r pgn; do
         local name="${pgn##*/}"
@@ -173,7 +173,7 @@ function pgm_list()
 
 # TODO: Add support for plugin update
 # TODO: handle pull conflicts
-function pgm_sync()
+function nine_sync()
 {
     declare -A repocfg
 
@@ -190,7 +190,7 @@ function pgm_sync()
     done <<< "$REPOS"
 }
 
-function pgm_ver()
+function nine_ver()
 {
     echo "$PGNAME: $VERSION"
 }
@@ -249,17 +249,17 @@ find_config
 [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" || exit 1
 
 if [ "$COMMAND" = "add" ]; then
-    pgm_add "$@"
+    nine_add "$@"
 elif [ "$COMMAND" = "del" ]; then
-    pgm_del "$@"
+    nine_del "$@"
 elif [ "$COMMAND" = "help" ]; then
-    pgm_help "$@"
+    nine_help "$@"
 elif [ -z "$COMMAND" ] || [ "$COMMAND" = "list" ]; then
-    pgm_list "$@"
+    nine_list "$@"
 elif [ "$COMMAND" = "sync" ]; then
-    pgm_sync "$@"
+    nine_sync "$@"
 elif [ "$COMMAND" = "ver" ]; then
-    pgm_ver "$@"
+    nine_ver "$@"
 else
     elog "'$COMMAND': no such command"
 fi

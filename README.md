@@ -1,3 +1,3 @@
-# tman-pgm
+# tec-nine
 
-Plugin manager for tman project
+Plugin manager for tec project
