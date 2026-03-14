@@ -65,30 +65,14 @@ Usage: tec nine COMMAND [OPTION]... [ARGS]...
     Tec plugin manager
 
     COMMAND list:
-      add       install plugin
       del       delete plugin
       help      show this help message and exit
       list      list plugins and statuses
-      sync      update plugin (pull changes from remote repo)
+      sync      update plugin
       ver       show version and exit
 
     Use 'tec nine help COMMAND' to get help on command
 EOF
-}
-
-function _help_add()
-{
-    cat << EOF
-Usage: tec nine add [OPTION]... [URL]...
-    Install a plugin via URL or from config file
-
-    Arguments:
-        URL     repo URL
-
-    Exit status:
-    under development
-EOF
-    return 0
 }
 
 function nine_help()
@@ -108,7 +92,7 @@ function nine_help()
 # TODO: add option -f : delete and reinstall plugin again
 # TODO: compile/install each plugin if needed
 # TODO: Add support to pass repo URL as an option
-function nine_add()
+function nine_sync()
 {
     declare -A repocfg
 
@@ -133,6 +117,14 @@ function nine_add()
                 echo "${repocfg["name"]}[ERR]: no such repo '${repocfg["link"]}'"
             fi
         fi
+
+        # Pull changes for each repo
+        if git -C "$PGNDIR/${repocfg["name"]}" pull --quiet "${repocfg["link"]}" 2>/dev/null; then
+            echo "${repocfg["name"]}[OK]: changes pulled"
+        else
+            echo "${repocfg["name"]}[ERR]: could not pull changes"
+        fi
+        echo
     done <<< "$REPOS"
 }
 
@@ -169,25 +161,6 @@ function nine_list()
         [ -s "$PGNDIR/$name/desc" ] && desc="$(cat "$PGNDIR/$name/desc")"
         printf "%-6s - %s\n" "$name" "$desc"
     done
-}
-
-# TODO: Add support for plugin update
-# TODO: handle pull conflicts
-function nine_sync()
-{
-    declare -A repocfg
-
-    [ -z "$CONFIG_FILE" ] && exit 0
-    REPOS="$(jq -c ".repos[]" "$CONFIG_FILE")"
-    while read -r repo; do
-        while IFS="=" read -r key val; do
-            [[ -n "$key" ]] && repocfg["$key"]="$val"  # Skip empty lines
-            #echo "-- pgnunits: $key -> $val"
-        done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<< "$repo")
-        repocfg["name"]="$(basename ${repocfg["link"]} ".git")"
-        repocfg["name"]=${repocfg["name"]#tec-}
-        #git pull origin -q "${repocfg["link"]}" "$PGNDIR/${repocfg["name"]}" 2>/dev/null
-    done <<< "$REPOS"
 }
 
 function nine_ver()
@@ -248,9 +221,7 @@ _check_args
 find_config
 [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" || exit 1
 
-if [ "$COMMAND" = "add" ]; then
-    nine_add "$@"
-elif [ "$COMMAND" = "del" ]; then
+if [ "$COMMAND" = "del" ]; then
     nine_del "$@"
 elif [ "$COMMAND" = "help" ]; then
     nine_help "$@"
