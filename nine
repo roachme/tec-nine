@@ -1,236 +1,142 @@
-#!/bin/env bash
+#!/bin/env python3
 
-PGNAME="tec-nine"
-VERSION="v0.0.1"
-COMMAND=
-TASKDIR=
-PGNDIR="$HOME/.local/lib/tec/pgn"
-BRDNAME=
-PRJNAME=
-TASKNAME=
-ISDEBUG=false
+import os
+import sys
+import json
+import pygit2
+import argparse
+from pathlib import Path
 
-# TODO: add option for config path on CLI
-CONFIG_FILE=
+pgname = "tec-gmux"
+pgnver = "v0.0.1"
+default_cmd = "show"
 
-function _check_args()
-{
-    # TODO: check board name when support is added
-    if [ -z "$PGNDIR" ]; then
-        elog "no plugin directory is passed"
-        exit 1
-    elif [ -z "$TASKDIR" ]; then
-        elog "no task directory is passed"
-        exit 1
-    fi
-}
+"""
+TODO:
+    1. Pull changes to update plugins
+"""
 
-function find_config()
-{
-    declare -a cfgs=(
-        "$HOME/.tec/pgn/nine.json"
-        "$HOME/.config/tec/pgn/nine.json"
-    )
+class Repo:
+    def __init__(self):
+        pass
 
-    for cfg in "${cfgs[@]}"; do
-        if [ -f "$cfg" ]; then
-            CONFIG_FILE="$cfg"
-            break
-        fi
-    done
-}
+    def setup(self):
+        pass
 
-function elog()
-{
-    echo "$PGNAME:" "$@" >&2
-}
+    def pull(self):
+        pass
 
-function dlog()
-{
-    if [ "$ISDEBUG" == true ]; then
-        echo "$PGNAME:" "$@"
-    fi
-}
+class Log:
+    def __init__(self):
+        pass
 
-function _nine_init()
-{
-    find_config
-}
+    def err(self, fmt, *arg):
+        print(f"{pgname}: " + fmt % arg, file=sys.stderr)
+        return 1
 
+    def info(self, fmt, *arg):
+        print(f"{pgname}: " + fmt % arg)
+        return 0
 
-function usage()
-{
-    cat << EOF
-Usage: tec nine COMMAND [OPTION]... [ARGS]...
-    Tec plugin manager
+    def debug(self, fmt, *arg):
+        print(f"{pgname}: " + fmt % arg)
+        return 0
 
-    COMMAND list:
-      del       delete plugin
-      help      show this help message and exit
-      list      list plugins and statuses
-      sync      update plugin
-      ver       show version and exit
+class Config:
+    def __init__(self):
+        self.config = None
 
-    Use 'tec nine help COMMAND' to get help on command
-EOF
-}
+    def _get_config_file(self):
+        paths = [
+            "/".join([os.environ["HOME"], ".tec/pgn/nine.json"]),
+            "/".join([os.environ["HOME"], ".config/tec/pgn/nine.json"]),
+        ]
+        for cfg in paths:
+            if os.path.exists(cfg):
+                return cfg
+        return None
 
-function nine_help()
-{
-    local command="$1"
-    declare -a commands=("add" "del" "help" "list" "ver")
+    def _get_defaults(self):
+        return {}
 
-    for cmd in "${commands[@]}"; do
-        if [ "$cmd" = "$command" ]; then
-            eval "_help_$cmd"
-            return
-        fi
-    done
-    usage
-}
+    def get(self):
+        fname = self._get_config_file()
 
-# TODO: add option -f : delete and reinstall plugin again
-# TODO: compile/install each plugin if needed
-# TODO: Add support to pass repo URL as an option
-function nine_sync()
-{
-    declare -A repocfg
+        if fname == None:
+            self.err("no config file is found")
+            sys.exit(1)
+        with open(fname) as file:
+            self.config = json.load(file)
+        return self.config
 
-    [ -z "$CONFIG_FILE" ] && exit 0
-    REPOS="$(jq -c ".repos[]" "$CONFIG_FILE")"
+class Nine:
+    def __init__(self, pgnbase):
+        self.pgnbase = pgnbase
+        self.config = Config().get()
 
-    while read -r repo; do
-        while IFS="=" read -r key val; do
-            [[ -n "$key" ]] && repocfg["$key"]="$val"  # Skip empty lines
-            #echo "-- pgnunits: $key -> $val"
-        done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<< "$repo")
-        repocfg["name"]="$(basename ${repocfg["link"]} ".git")"
-        repocfg["name"]=${repocfg["name"]#tec-}
+    def _get_desc(self, pgn):
+        desc = "Tec plugin"
+        fname = "/".join([self.pgnbase, pgn, "desc"])
 
-        # check if repo is already cloned
-        if [ -d "$PGNDIR/${repocfg["name"]}" ]; then
-            echo "${repocfg["name"]}[OK]: repo already cloned"
-        else
-            if git clone -q --recursive "${repocfg["link"]}" "$PGNDIR/${repocfg["name"]}" 2>/dev/null; then
-                echo "${repocfg["name"]}[OK]: repo is cloned"
-            else
-                echo "${repocfg["name"]}[ERR]: no such repo '${repocfg["link"]}'"
-            fi
-        fi
-
-        # Pull changes for each repo
-        if git -C "$PGNDIR/${repocfg["name"]}" pull --quiet "${repocfg["link"]}" 2>/dev/null; then
-            echo "${repocfg["name"]}[OK]: changes pulled"
-        else
-            echo "${repocfg["name"]}[ERR]: could not pull changes"
-        fi
-        echo
-    done <<< "$REPOS"
-}
-
-function nine_del()
-{
-    local pgname="$1"
-
-    printf "Are you sure to delete pluign in %s? [y/N] " "$PGNDIR/$pgname"
-    read -r choice
-    if [ "$choice" != "Y" ] && [ "$choice" != "y" ] && [ "$choice" != "yes" ]; then
-        echo "plugin deletion is canceled"
-        exit 1
-    fi
-
-    if [ -z "$pgname" ]; then
-        elog "no plugin is provided. Try 'nine help' for more info"
-        exit 1
-    elif [ ! -d "$PGNDIR/$pgname" ]; then
-        elog "$pgname: no such plugin. Try 'nine help' for more info"
-        exit 1
-    else
-        echo "delete plugin in $PGNDIR/$pgname"
-        rm -rf "$PGNDIR/$pgname"
-    fi
-}
-
-# TODO: add stutus: repo is cloned or not
-function nine_list()
-{
-    find "$PGNDIR/" -maxdepth 1 -type d ! -path "$PGNDIR/" | while read -r pgn; do
-        local name="${pgn##*/}"
-        local desc="tec plugin"
-
-        [ -s "$PGNDIR/$name/desc" ] && desc="$(cat "$PGNDIR/$name/desc")"
-        printf "%-6s - %s\n" "$name" "$desc"
-    done
-}
-
-function nine_ver()
-{
-    echo "$PGNAME: $VERSION"
-}
+        if os.path.isfile(fname):
+            with open(fname, "r") as f:
+                desc = f.readline()
+                if desc:
+                    desc = desc.strip("\n")
+        return desc
 
 
-OPTS=$(getopt -o b:d:i:p:P:T:h --long board:,debug:prj:,taskid:,pgndir:,taskdir:help -n "$PGNAME" -- "$@")
-if [ $? -ne 0 ]; then
-    #echo "error parsing options" >&2
-    exit
-fi
+    def add(self): # Activate plugin
+        pass
 
-## Reset the positional parameters to the parsed options
-eval set -- "$OPTS"
+    def cfg(self): # config show, edit, list, get, set
+        for _cfg in self.config["repos"]:
+            print(f"{_cfg["name"]}\t{_cfg["link"]}")
 
-while true; do
-    case "$1" in
-        -b)
-            BRDNAME="$2"
-            shift 2
-            ;;
-        -d)
-            ISDEBUG="$2"
-            shift 2
-            ;;
-        -i)
-            TASKNAME="$2"
-            shift 2
-            ;;
-        -p)
-            PRJNAME="$2"
-            shift 2
-            ;;
-        -P)
-            PGNDIR="$2"
-            shift 2
-            ;;
-        -T)
-            TASKDIR="$2"
-            shift 2
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            echo "$PGNAME: invalid option '$1'" >&2
-            exit 1
-    esac
-done
+    def init(self): # Download plugins
+        for cfg in self.config["repos"]:
+            repodir = "/".join([self.pgnbase, cfg['name']])
+            if not os.path.exists(repodir):
+                pygit2.clone_repository(cfg['link'], repodir)
 
-COMMAND="$1"; shift 1
+    def rm(self): # Deactiate plugin
+        pass
 
+    def show(self):
+        path = Path(self.pgnbase)
+        plugins = [entry.name for entry in path.iterdir() if entry.is_dir()]
 
-_check_args
-find_config
-[ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" || exit 1
+        for pgn in plugins:
+            print(f"{pgn}\t{self._get_desc(pgn)}")
 
-if [ "$COMMAND" = "del" ]; then
-    nine_del "$@"
-elif [ "$COMMAND" = "help" ]; then
-    nine_help "$@"
-elif [ -z "$COMMAND" ] || [ "$COMMAND" = "list" ]; then
-    nine_list "$@"
-elif [ "$COMMAND" = "sync" ]; then
-    nine_sync "$@"
-elif [ "$COMMAND" = "ver" ]; then
-    nine_ver "$@"
-else
-    elog "'$COMMAND': no such command"
-fi
+    def sync(self): # Git pull
+        for cfg in self.config["repos"]:
+            print("sync cfg repo:", cfg)
+        pass
+
+    def version(self):
+        print(f"{pgname}: {pgnver}")
+
+parser = argparse.ArgumentParser(description="Tec plugin manager")
+parser.add_argument("-P", "--pgnbase", help="pgn directory base")
+parser.add_argument("-T", "--taskbase", help="task directory base")
+parser.add_argument("-V", "--version", action="store_true", help="plugin version")
+parser.add_argument("cmd", default=default_cmd, nargs='?', type=str, help="subcommand")
+#parser.add_argument("taskids", type=str, nargs='*', help="task ID")
+args = parser.parse_args()
+
+def main():
+    log = Log()
+    nine = Nine(args.pgnbase)
+    cmd = getattr(nine, args.cmd, None)
+
+    if args.version:
+        cmd = getattr(nine, "version", None)
+
+    if cmd is not None:
+        res = cmd()
+    else:
+        res = log.err(f"'{args.cmd}': no such command")
+    sys.exit(res)
+
+main()
