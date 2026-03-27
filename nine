@@ -7,7 +7,7 @@ import pygit2
 import argparse
 from pathlib import Path
 
-pgname = "tec-gmux"
+pgname = "tec-nine"
 pgnver = "v0.0.1"
 default_cmd = "show"
 
@@ -16,15 +16,29 @@ TODO:
     1. Pull changes to update plugins
 """
 
-class Repo:
-    def __init__(self):
-        pass
-
-    def setup(self):
-        pass
-
-    def pull(self):
-        pass
+help_cmds = {
+    "help": {
+        "usage" : f"{pgname.replace("-", " ")}",
+        "synop" : f"{pgname.replace("-", " ")} help [OPTION]... [CMD]...",
+        "head" : "Show help for commands",
+        "body" : "",
+    },
+    "show": {
+        "usage" : f"{pgname.replace("-", " ")}",
+        "synop" : f"{pgname.replace("-", " ")} show [OPTION]...",
+        "head" : "Show list of plugins",
+        "body" :
+"""
+    Show list of installed plugins.
+""",
+    },
+    "sync": {
+        "usage" : f"{pgname.replace("-", " ")}",
+        "synop" : f"{pgname.replace("-", " ")} sync [OPTION]...",
+        "head" : "Update repos from remote",
+        "body" : "",
+    }
+}
 
 class Log:
     def __init__(self):
@@ -41,6 +55,37 @@ class Log:
     def debug(self, fmt, *arg):
         print(f"{pgname}: " + fmt % arg)
         return 0
+
+class Help(Log):
+    def __init__(self):
+        pass
+
+    def cmd_exists(self, cmd):
+        if help_cmds.get(cmd) == None:
+            return False
+        return True
+
+    def show_help(self, cmd):
+        head = help_cmds[cmd]['head']
+        body = help_cmds[cmd]['body']
+        synop = help_cmds[cmd]['synop']
+        print(synop)
+        print("   ", head)
+        print(body, end='')
+
+    def show_list(self):
+        for cmd in help_cmds:
+            print(f"{cmd}\t{self.get_head(cmd)}")
+
+    def get_head(self, cmd):
+        if self.cmd_exists(cmd) == False:
+            return None
+        return help_cmds[cmd]['head']
+
+    def get_body(self, cmd):
+        if self.cmd_exists(cmd) == False:
+            return None
+        return help_cmds[cmd]['body']
 
 class Config:
     def __init__(self):
@@ -69,8 +114,19 @@ class Config:
             self.config = json.load(file)
         return self.config
 
+class Repo:
+    def __init__(self):
+        pass
+
+    def setup(self):
+        pass
+
+    def pull(self):
+        pass
+
 class Nine:
     def __init__(self, pgnbase):
+        self.log = Log()
         self.pgnbase = pgnbase
         self.config = Config().get()
 
@@ -92,6 +148,19 @@ class Nine:
     def cfg(self): # config show, edit, list, get, set
         for _cfg in self.config["repos"]:
             print(f"{_cfg["name"]}\t{_cfg["link"]}")
+
+    def help(self):
+        help = Help()
+
+        if len(args.args) == 0:
+            return help.show_list()
+
+        for cmd in args.args:
+            if help.cmd_exists(cmd) == False:
+                self.log.err("'%s': no such plugin command", cmd)
+                continue
+            help.show_help(cmd)
+            #print(f"{cmd}\t{help.get_head(cmd)}")
 
     def init(self): # Download plugins
         for cfg in self.config["repos"]:
@@ -122,7 +191,7 @@ parser.add_argument("-P", "--pgnbase", help="pgn directory base")
 parser.add_argument("-T", "--taskbase", help="task directory base")
 parser.add_argument("-V", "--version", action="store_true", help="plugin version")
 parser.add_argument("cmd", default=default_cmd, nargs='?', type=str, help="subcommand")
-#parser.add_argument("taskids", type=str, nargs='*', help="task ID")
+parser.add_argument("args", type=str, nargs='*', help="non-positional arguments")
 args = parser.parse_args()
 
 def main():
