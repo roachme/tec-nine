@@ -6,6 +6,7 @@ import json
 import pygit2
 import argparse
 from pathlib import Path
+from pygit2 import GIT_MERGE_ANALYSIS_FASTFORWARD, GIT_MERGE_ANALYSIS_NORMAL, GIT_MERGE_ANALYSIS_UP_TO_DATE
 
 pgname = "tec-nine"
 pgnver = "v0.0.1"
@@ -39,6 +40,75 @@ help_cmds = {
         "body" : "",
     }
 }
+
+def fetch(repo, remote_name='origin'):
+    remote = repo.remotes[remote_name]
+    remote.fetch()
+
+def merge(repo, remote_name='origin', branch='master'):
+    """
+    Performs a git pull equivalent: fetches the remote and updates the local branch.
+
+    Args:
+        repo: pygit2.Repository instance
+        remote_name: Name of the remote (e.g., 'origin')
+        branch: Name of the branch to pull (e.g., 'master')
+    """
+
+    # 1. Get the remote tracking branch reference
+    remote_branch_name = f'refs/remotes/{remote_name}/{branch}'
+    remote_commit_id = repo.lookup_reference(remote_branch_name).target
+    remote_commit = repo.get(remote_commit_id)
+
+    # 2. Analyze if and how we can merge
+    merge_result, _ = repo.merge_analysis(remote_commit_id)
+
+    # 3. Case 1: Already up to date
+    if merge_result & GIT_MERGE_ANALYSIS_UP_TO_DATE:
+        print("Already up to date.")
+        return
+
+    # 4. Case 2: Fast-forward possible
+    elif merge_result & GIT_MERGE_ANALYSIS_FASTFORWARD:
+        print("Fast-forwarding...")
+        # Move the branch reference and HEAD to the remote commit
+        repo.checkout_tree(remote_commit)
+        branch_ref = repo.lookup_reference(f'refs/heads/{branch}')
+        branch_ref.set_target(remote_commit_id)
+        repo.head.set_target(remote_commit_id)
+        #print(f"Updated to {remote_commit_id.hex}")
+
+    # 5. Case 3: True merge required
+    elif merge_result & GIT_MERGE_ANALYSIS_NORMAL:
+        print("Merging...")
+        # Perform the merge
+        repo.merge(remote_commit_id)
+
+        # Check for conflicts
+        if repo.index.conflicts:
+            print("Conflicts detected! Please resolve them manually.")
+            # You can iterate through conflicts if needed:
+            # for conflict in repo.index.conflicts:
+            #     print(f"Conflict in: {conflict[0].path}")
+            return
+
+        # No conflicts: commit the merge
+        user = repo.default_signature
+        tree = repo.index.write_tree()
+        repo.create_commit(
+            'HEAD',
+            user,
+            user,
+            f"Merge remote branch '{remote_name}/{branch}'",
+            tree,
+            [repo.head.target, remote_commit_id]
+        )
+        # Clean up merge state
+        repo.state_cleanup()
+        print("Merge completed successfully.")
+
+    else:
+        raise RuntimeError("Unknown merge analysis result")
 
 class Log:
     def __init__(self):
@@ -115,8 +185,9 @@ class Config:
         return self.config
 
 class Repo:
-    def __init__(self):
-        pass
+    def __init__(self, config, path):
+        self.config = config
+        self.path = path
 
     def setup(self):
         pass
@@ -124,11 +195,25 @@ class Repo:
     def pull(self):
         pass
 
+    def fetch(self, remote_name="origin"):
+        for cfg in self.config['repos']:
+            repo = pygit2.Repository(self.path + '/' + cfg['name'])
+            fetch(repo)
+        return True
+
+    def merge(self, remote_name="origin"):
+        for cfg in self.config['repos']:
+            repo = pygit2.Repository(self.path + '/' + cfg['name'])
+            #print("->>", cfg['name'])
+            merge(repo, 'origin', cfg['branch'])
+        return True
+
 class Nine:
     def __init__(self, pgnbase):
         self.log = Log()
         self.pgnbase = pgnbase
         self.config = Config().get()
+        self.settings = Config().get()
 
     def _get_desc(self, pgn):
         desc = "Tec plugin"
@@ -179,9 +264,9 @@ class Nine:
             print(f"{pgn}\t{self._get_desc(pgn)}")
 
     def sync(self): # Git pull
-        for cfg in self.config["repos"]:
-            print("sync cfg repo:", cfg)
-        pass
+        repo = Repo(self.settings, args.pgnbase)
+        repo.fetch()
+        repo.merge()
 
     def version(self):
         print(f"{pgname}: {pgnver}")
