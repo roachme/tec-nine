@@ -12,6 +12,11 @@ pgname = "tec-nine"
 pgnver = "v0.0.1"
 default_cmd = "show"
 
+# Exit status codes
+NINE_SUCCESS = 0
+NINE_FAILURE = 1
+
+
 """
 TODO:
     1. Pull changes to update plugins
@@ -65,7 +70,7 @@ def merge(repo, remote_name='origin', branch='master'):
 
     # 3. Case 1: Already up to date
     if merge_result & GIT_MERGE_ANALYSIS_UP_TO_DATE:
-        print("Already up to date.")
+        #print("Already up to date.")
         return
 
     # 4. Case 2: Fast-forward possible
@@ -186,8 +191,15 @@ class Config:
 
 class Repo:
     def __init__(self, config, path):
+        self.log = Log()
         self.config = config
         self.path = path
+        print("path", path)
+
+    def has_uncommited_changes(self, cfg):
+        repo = pygit2.Repository(self.path + "/" + cfg['name'])
+        status = repo.status()
+        return len(status) > 0
 
     def setup(self):
         pass
@@ -195,17 +207,17 @@ class Repo:
     def pull(self):
         pass
 
-    def fetch(self, remote_name="origin"):
-        for cfg in self.config['repos']:
-            repo = pygit2.Repository(self.path + '/' + cfg['name'])
-            fetch(repo)
+    def fetch(self, cfg, remote_name="origin"):
+        repo = pygit2.Repository(self.path + "/" + cfg['name'])
+        self.log.info("fetching repo '%s'", cfg["name"])
+        remote = repo.remotes[remote_name]
+        remote.fetch()
         return True
 
-    def merge(self, remote_name="origin"):
-        for cfg in self.config['repos']:
-            repo = pygit2.Repository(self.path + '/' + cfg['name'])
-            #print("->>", cfg['name'])
-            merge(repo, 'origin', cfg['branch'])
+    def merge(self, cfg, remote_name="origin"):
+        repo = pygit2.Repository(self.path + "/" + cfg['name'])
+        self.log.debug("'%s': merge repo", cfg['name'])
+        merge(repo, 'origin', cfg['branch'])
         return True
 
 class Nine:
@@ -214,6 +226,16 @@ class Nine:
         self.pgnbase = pgnbase
         self.config = Config().get()
         self.settings = Config().get()
+
+        for cfg in self.settings['repos']:
+            repodir = "/".join([self.pgnbase + "/" + cfg['name']])
+            if not os.path.exists(repodir):
+                repo = pygit2.clone_repository(cfg['link'], repodir)
+            else:
+                repo = pygit2.Repository(repodir)
+            for submodule in repo.submodules:
+                submodule.init()
+                submodule.update(init=True)
 
     def _get_desc(self, pgn):
         desc = "Tec plugin"
@@ -264,9 +286,20 @@ class Nine:
             print(f"{pgn}\t{self._get_desc(pgn)}")
 
     def sync(self): # Git pull
+        retcode = True
         repo = Repo(self.settings, args.pgnbase)
-        repo.fetch()
-        repo.merge()
+
+        for cfg in self.settings['repos']:
+            if repo.has_uncommited_changes(cfg) == True:
+                retcode = False
+                self.log.err("'%s': repo has uncommited changes", cfg['name'])
+            elif repo.fetch(cfg) == False:
+                self.log.err("'%s': could not fetch changes", cfg['name'])
+                retcode = False
+            elif repo.merge(cfg) == False:
+                self.log.err("'%s': could not merge branch", cfg['name'])
+                retcode = False
+        return NINE_SUCCESS if retcode == True else NINE_FAILURE
 
     def version(self):
         print(f"{pgname}: {pgnver}")
